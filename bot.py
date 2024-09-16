@@ -109,17 +109,23 @@ async def ask(update: Update, context):
     return WAITING_FOR_QUESTION
 
 
-# Handle receiving the user's question
+# Handle receiving the user's question and provide document reference
 async def ask_question(update: Update, context):
     user_prompt = update.message.text
-    response = retrieve_and_generate(user_prompt)
+    response, source_files = retrieve_and_generate(user_prompt)
 
     # Check if the response is valid
     if response == "Invalid folder path.":
         await update.message.reply_text(
             "The vector store is not loaded correctly. Please reset the folder path using /path_folder.")
     else:
-        await update.message.reply_text(response)
+        # Handle case where source_files is None
+        if source_files:
+            reference_message = "\n".join([f"Document: {file}" for file in source_files])
+        else:
+            reference_message = "No document references found."
+
+        await update.message.reply_text(f"{response}\n\nReferences:\n{reference_message}")
 
     return ConversationHandler.END
 
@@ -138,8 +144,15 @@ async def handle_message(update: Update, context):
 
     # Treat the user's message as a question for the AI
     user_message = update.message.text
-    response = retrieve_and_generate(user_message)
-    await update.message.reply_text(response)
+    response, source_files = retrieve_and_generate(user_message)
+
+    # Send the response with references to the source documents
+    if source_files:
+        reference_message = "\n".join([f"Document: {file}" for file in source_files])
+    else:
+        reference_message = "No document references found."
+
+    await update.message.reply_text(f"{response}\n\nReferences:\n{reference_message}")
 
 
 # Main function to set up the bot

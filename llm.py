@@ -23,7 +23,10 @@ def load_and_index_pdfs(folder_path):
         if filename.endswith(".pdf"):
             file_path = os.path.join(folder_path, filename)
             loader = PyMuPDFLoader(file_path)
-            documents.extend(loader.load())
+            docs = loader.load()
+            for doc in docs:
+                doc.metadata = {"source": filename}  # Attach the filename to the document metadata
+            documents.extend(docs)
 
     # Split documents into smaller chunks
     text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
@@ -39,7 +42,7 @@ def load_and_index_pdfs(folder_path):
 def retrieve_and_generate(prompt: str):
     global vector_store
     if not vector_store:
-        return "Please set the folder path using /path_folder and ensure PDFs are loaded."
+        return "Please set the folder path using /path_folder and ensure PDFs are loaded.", None
 
     # Set up retriever
     retriever = vector_store.as_retriever()
@@ -48,9 +51,29 @@ def retrieve_and_generate(prompt: str):
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,
         retriever=retriever,
-        chain_type="stuff"
+        chain_type="stuff",
+        return_source_documents=True  # Ensure that source documents are returned
     )
 
-    # Generate answer based on retrieved documents
-    response = qa_chain.run(prompt)
-    return response
+    try:
+        # Use .invoke() method instead of deprecated __call__()
+        result = qa_chain.invoke({"query": prompt})
+
+        # Ensure 'source_documents' key is present and retrieve documents
+        sources = result.get("source_documents", [])
+        if not sources:
+            return result["result"], None  # Return response without source if no documents were retrieved
+
+        # Extract the filenames from the source documents
+        source_files = set([doc.metadata["source"] for doc in sources if "source" in doc.metadata])
+
+        response = result["result"]
+        return response, source_files
+
+    except KeyError as e:
+        # Handle unexpected keys in the result
+        return f"Error: Missing key {str(e)} in response.", None
+
+    except Exception as e:
+        # Catch any other errors
+        return f"An error occurred: {str(e)}", None
