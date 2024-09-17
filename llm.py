@@ -9,7 +9,7 @@ from langchain.chains import RetrievalQA
 openai_api_key = os.getenv('OPENAI_API_KEY')
 
 # Initialize LLM
-llm = ChatOpenAI(openai_api_key=openai_api_key)
+llm = ChatOpenAI(openai_api_key=openai_api_key, model_name='gpt-4o')
 
 vector_store = None
 

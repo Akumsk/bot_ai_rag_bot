@@ -7,3 +7,4 @@ faiss-cpu
 python-dotenv
 langchain-openai
 langchain-community
+psycopg2
