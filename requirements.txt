@@ -8,3 +8,5 @@ python-dotenv
 langchain-openai
 langchain-community
 psycopg2
+python-docx
+pandas
