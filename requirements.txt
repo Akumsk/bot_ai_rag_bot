@@ -10,3 +10,4 @@ langchain-community
 psycopg2
 python-docx
 pandas
+openpyxl

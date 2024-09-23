@@ -30,43 +30,44 @@ def load_word_file(file_path):
     return "\n".join([para.text for para in doc.paragraphs])
 
 # Updated function to load and process PDF, Word, and Excel files and create FAISS index
-# Updated function to load and process PDF, Word, and Excel files and create FAISS index
 def load_and_index_documents(folder_path):
     global vector_store
 
-    # Load and read documents (PDF, Word, Excel) from folder
+    # Load and read documents (PDF, Word, Excel) from folder and subfolders
     documents = []
     found_valid_file = False  # Track whether any valid documents are found
 
-    for filename in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, filename)
+    # Walk through the folder and its subfolders
+    for dirpath, _, filenames in os.walk(folder_path):
+        for filename in filenames:
+            file_path = os.path.join(dirpath, filename)
 
-        # Handle PDF files
-        if filename.endswith(".pdf"):
-            loader = PyMuPDFLoader(file_path)
-            docs = loader.load()
-            for doc in docs:
-                doc.metadata = {"source": filename}  # Attach the filename to the document metadata
-                documents.append(doc)  # Add each PDF page as a document object
-            found_valid_file = True  # Mark that we found a valid file
+            # Handle PDF files
+            if filename.endswith(".pdf"):
+                loader = PyMuPDFLoader(file_path)
+                docs = loader.load()
+                for doc in docs:
+                    doc.metadata = {"source": filename}  # Attach the filename to the document metadata
+                    documents.append(doc)  # Add each PDF page as a document object
+                found_valid_file = True  # Mark that we found a valid file
 
-        # Handle Word files
-        elif filename.endswith(".docx"):
-            content = load_word_file(file_path)
-            doc = Document(page_content=content, metadata={"source": filename})  # Use Langchain's Document schema
-            documents.append(doc)
-            found_valid_file = True  # Mark that we found a valid file
+            # Handle Word files
+            elif filename.endswith(".docx"):
+                content = load_word_file(file_path)
+                doc = Document(page_content=content, metadata={"source": filename})  # Use Langchain's Document schema
+                documents.append(doc)
+                found_valid_file = True  # Mark that we found a valid file
 
-        # Handle Excel files
-        elif filename.endswith(".xlsx"):
-            content = load_excel_file(file_path)
-            doc = Document(page_content=content, metadata={"source": filename})  # Use Langchain's Document schema
-            documents.append(doc)
-            found_valid_file = True  # Mark that we found a valid file
+            # Handle Excel files
+            elif filename.endswith(".xlsx"):
+                content = load_excel_file(file_path)
+                doc = Document(page_content=content, metadata={"source": filename})  # Use Langchain's Document schema
+                documents.append(doc)
+                found_valid_file = True  # Mark that we found a valid file
 
     # If no valid files were found, provide an appropriate error message
     if not found_valid_file:
-        return "No valid files found in the folder. Please provide PDF, Word, or Excel files."
+        return "No valid files found in the folder or subfolders. Please provide PDF, Word, or Excel files."
 
     # Split documents into smaller chunks
     text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
