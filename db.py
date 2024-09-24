@@ -70,5 +70,3 @@ def get_last_folder(user_id):
         print(f"An error occurred while fetching folder: {e}")
 
     return folder
-
-
