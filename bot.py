@@ -4,7 +4,7 @@ from telegram.ext import ConversationHandler
 import logging
 import os
 from dotenv import load_dotenv
-from llm import load_and_index_documents, retrieve_and_generate  # Import LLM-related functions from llm.py
+from llm import load_and_index_documents, retrieve_and_generate, evaluate_context_token_count  # Import LLM-related functions from llm.py
 from db import add_user_to_db, get_last_folder  # Import the necessary functions from db.py
 
 # Load environment variables
@@ -31,15 +31,19 @@ async def start(update: Update, context):
 
     if last_folder:
         context.user_data['folder_path'] = last_folder  # Set the retrieved folder as the current folder
-        # Check if the folder contains any valid files (PDF, Word, Excel)
         valid_files_in_folder = [f for f in os.listdir(last_folder) if f.endswith((".pdf", ".docx", ".xlsx"))]
         context.user_data['valid_files_in_folder'] = valid_files_in_folder
 
         if valid_files_in_folder:
             load_and_index_documents(last_folder)  # Load and index the files
-            context.user_data['vector_store_loaded'] = True  # Mark the vector store as successfully loaded
+            context.user_data['vector_store_loaded'] = True
+
+            # Evaluate token count
+            token_status = evaluate_context_token_count(last_folder)
+
             await update.message.reply_text(
                 f"Welcome back, {user_name}! I have loaded your previous folder for context:\n\n {last_folder}\n\n"
+                f"Token Status: {token_status}\n\n"
                 f"If you need to change the folder, please use /path_folder.\n"
                 "You can interact with the bot using the following commands:\n"
                 "/start - Display this introduction message.\n"
@@ -65,7 +69,6 @@ async def start(update: Update, context):
 # Status command handler
 async def status(update: Update, context):
     user_name = update.message.from_user.full_name
-
     folder_path = context.user_data.get('folder_path', "")
     valid_files_in_folder = context.user_data.get('valid_files_in_folder', [])
 
@@ -79,14 +82,22 @@ async def status(update: Update, context):
         if valid_files_in_folder:
             file_list = "\n".join(valid_files_in_folder)
             folder_info = f"The folder path is currently set to: {folder_path}\n\nValid Files (PDF, Word, Excel):\n{file_list}"
+
+            # Evaluate token count
+            token_status = evaluate_context_token_count(folder_path)
+
+            await update.message.reply_text(
+                f"Status Information:\n\n"
+                f"Name: {user_name}\n"
+                f"{folder_info}\n\nValue of Context folder: {token_status}"
+            )
         else:
             folder_info = f"The folder path is currently set to: {folder_path}, but no valid files (PDF, Word, or Excel) were found."
-
-        await update.message.reply_text(
-            f"Status Information:\n\n"
-            f"Name: {user_name}\n"
-            f"{folder_info}"
-        )
+            await update.message.reply_text(
+                f"Status Information:\n\n"
+                f"Name: {user_name}\n"
+                f"{folder_info}"
+            )
 
 # Path folder command handler
 async def path_folder(update: Update, context):
@@ -115,7 +126,13 @@ async def set_path_folder(update: Update, context):
     context.user_data['valid_files_in_folder'] = valid_files_in_folder
     load_and_index_documents(folder_path)  # This loads and indexes the documents
     context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
-    await update.message.reply_text(f"Folder path successfully set to: {folder_path} and valid files have been indexed.")
+
+    # Evaluate token count
+    token_status = evaluate_context_token_count(folder_path)
+
+    await update.message.reply_text(
+        f"Folder path successfully set to: {folder_path}\n\nValid files have been indexed.\n\nToken Status: {token_status}"
+    )
 
     # Save the user information in the database
     add_user_to_db(user_id=user_id, user_name=user_name, folder=folder_path)
