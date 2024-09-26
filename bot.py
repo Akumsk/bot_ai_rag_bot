@@ -77,7 +77,6 @@ async def status(update: Update, context):
         )
     else:
         if valid_files_in_folder:
-            # Display only the file names
             file_list = "\n".join(valid_files_in_folder)
             folder_info = f"The folder path is currently set to: {folder_path}\n\nValid Files (PDF, Word, Excel):\n{file_list}"
         else:
@@ -95,7 +94,6 @@ async def path_folder(update: Update, context):
     return WAITING_FOR_FOLDER_PATH
 
 # Handle receiving the folder path
-# Path folder command handler
 async def set_path_folder(update: Update, context):
     folder_path = update.message.text
     user_id = update.message.from_user.id
@@ -106,16 +104,10 @@ async def set_path_folder(update: Update, context):
         await update.message.reply_text("Invalid folder path. Please provide a valid path.")
         return ConversationHandler.END
 
-    # Recursively find all valid files (PDF, Word, Excel) in the folder and subfolders
-    valid_files_in_folder = []
-    for dirpath, _, filenames in os.walk(folder_path):
-        for filename in filenames:
-            if filename.endswith((".pdf", ".docx", ".xlsx")):
-                # Collect only the file names
-                valid_files_in_folder.append(filename)
-
+    # Check if there are any valid files (PDF, Word, Excel) in the folder
+    valid_files_in_folder = [f for f in os.listdir(folder_path) if f.endswith((".pdf", ".docx", ".xlsx"))]
     if not valid_files_in_folder:
-        await update.message.reply_text("No valid files (PDF, Word, or Excel) found in the folder or its subfolders. Please provide a folder containing valid documents.")
+        await update.message.reply_text("No valid files (PDF, Word, or Excel) found in the folder. Please provide a folder containing valid documents.")
         return ConversationHandler.END
 
     # Set user-specific folder path and process the documents
@@ -129,19 +121,6 @@ async def set_path_folder(update: Update, context):
     add_user_to_db(user_id=user_id, user_name=user_name, folder=folder_path)
 
     return ConversationHandler.END
-
-    # Set user-specific folder path and process the documents
-    context.user_data['folder_path'] = folder_path
-    context.user_data['valid_files_in_folder'] = valid_files_in_folder
-    load_and_index_documents(folder_path)  # This loads and indexes the documents
-    context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
-    await update.message.reply_text(f"Folder path successfully set to: {folder_path} and valid files have been indexed.")
-
-    # Save the user information in the database
-    add_user_to_db(user_id=user_id, user_name=user_name, folder=folder_path)
-
-    return ConversationHandler.END
-
 
 # Ask command handler
 async def ask(update: Update, context):
