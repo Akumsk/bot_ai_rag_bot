@@ -16,6 +16,8 @@ telegram_token = os.getenv('TELEGRAM_TOKEN')
 # States for ConversationHandler
 WAITING_FOR_FOLDER_PATH, WAITING_FOR_QUESTION = range(2)
 
+max_tokens = 50000
+
 # Start command handler
 async def start(update: Update, context):
     user_id = update.message.from_user.id
@@ -39,7 +41,7 @@ async def start(update: Update, context):
             context.user_data['vector_store_loaded'] = True
 
             # Evaluate token count
-            token_status = evaluate_context_token_count(last_folder)
+            token_status = evaluate_context_token_count(last_folder,max_tokens)
 
             await update.message.reply_text(
                 f"Welcome back, {user_name}! I have loaded your previous folder for context:\n\n {last_folder}\n\n"
@@ -84,7 +86,7 @@ async def status(update: Update, context):
             folder_info = f"The folder path is currently set to: {folder_path}\n\nValid Files (PDF, Word, Excel):\n{file_list}"
 
             # Evaluate token count
-            token_status = evaluate_context_token_count(folder_path)
+            token_status = evaluate_context_token_count(folder_path, max_tokens)
 
             await update.message.reply_text(
                 f"Status Information:\n\n"
@@ -128,7 +130,7 @@ async def set_path_folder(update: Update, context):
     context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
 
     # Evaluate token count
-    token_status = evaluate_context_token_count(folder_path)
+    token_status = evaluate_context_token_count(folder_path, max_tokens)
 
     await update.message.reply_text(
         f"Folder path successfully set to: {folder_path}\n\nValid files have been indexed.\n\nToken Status: {token_status}"

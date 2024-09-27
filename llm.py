@@ -98,7 +98,7 @@ def count_tokens_in_documents(documents):
 
 
 # Function to evaluate tokens in the context folder
-def evaluate_context_token_count(folder_path):
+def evaluate_context_token_count(folder_path, token_limit):
     """Evaluates the total token count in documents within a folder."""
     documents = []
     found_valid_file = False  # Track whether any valid documents are found
@@ -136,7 +136,7 @@ def evaluate_context_token_count(folder_path):
     total_tokens = count_tokens_in_documents(documents)
 
     # If tokens exceed 10,000, return the warning message
-    if total_tokens > 10000:
+    if total_tokens > token_limit:
         return "The context folder contains too many tokens. Kindly remove any unnecessary documents to proceed."
     else:
         return f"Total token count: {total_tokens}"
