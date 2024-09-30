@@ -4,8 +4,8 @@ from telegram.ext import ConversationHandler
 import logging
 import os
 from dotenv import load_dotenv
-from llm import load_and_index_documents, retrieve_and_generate, evaluate_context_token_count  # Import LLM-related functions from llm.py
-from db import add_user_to_db, get_last_folder  # Import the necessary functions from db.py
+from llm import load_and_index_documents, retrieve_and_generate, evaluate_context_token_count
+from db import add_user_to_db, get_last_folder
 
 # Load environment variables
 load_dotenv()
@@ -14,9 +14,9 @@ load_dotenv()
 telegram_token = os.getenv('TELEGRAM_TOKEN')
 
 # States for ConversationHandler
-WAITING_FOR_FOLDER_PATH, WAITING_FOR_QUESTION = range(2)
+WAITING_FOR_FOLDER_PATH, WAITING_FOR_QUESTION, WAITING_FOR_PROJECT_SELECTION = range(3)
 
-max_tokens = 50000
+max_tokens = 100000
 
 # Start command handler
 async def start(update: Update, context):
@@ -41,16 +41,20 @@ async def start(update: Update, context):
             context.user_data['vector_store_loaded'] = True
 
             # Evaluate token count
-            token_status = evaluate_context_token_count(last_folder,max_tokens)
+            token_count = evaluate_context_token_count(last_folder, max_tokens)
+            percentage_full = (token_count / max_tokens) * 100
+            percentage_full = min(percentage_full, 100)  # Ensure it doesn't exceed 100%
 
             await update.message.reply_text(
                 f"Welcome back, {user_name}! I have loaded your previous folder for context:\n\n {last_folder}\n\n"
-                f"Token Status: {token_status}\n\n"
-                f"If you need to change the folder, please use /path_folder.\n"
-                "You can interact with the bot using the following commands:\n"
+                f"Context storage is {percentage_full:.2f}% full.\n\n"
+                f"You can specify any folder by command /folder \n"
+                f"Or select the /projects from predefined options\n"
                 "/start - Display this introduction message.\n"
                 "/ask - Ask a question about the content of the documents.\n"
                 "/status - Display current user and folder path information, along with a list of valid files in the folder.\n"
+                "/knowledge_base - Set the context folder to the knowledge base.\n"
+                "/projects - Select a project folder from predefined options.\n"
                 "Additionally, you can send any message without a command, and it will be treated as a question."
             )
         else:
@@ -62,11 +66,69 @@ async def start(update: Update, context):
             "Welcome to the AI document assistant bot! This bot generates text-based responses using documents "
             "in a specified folder. You can interact with the bot using the following commands:\n\n"
             "/start - Display this introduction message.\n"
-            "/path_folder - Set the folder path where your PDF, Word, or Excel documents are located.\n"
+            "/folder - Set the folder path where your PDF, Word, or Excel documents are located.\n"
+            "/projects - Select a project folder from predefined options.\n"
             "/ask - Ask a question about the content of the documents.\n"
             "/status - Display current user and folder path information, along with a list of valid files in the folder.\n"
+            "/knowledge_base - Set the context folder to the knowledge base.\n"
             "Additionally, you can send any message without a command, and it will be treated as a question."
         )
+
+# Projects command handler
+async def projects(update: Update, context):
+    await update.message.reply_text("Please put the number to select the project: 1) Lima, 2) Origin, 3) Setter.")
+    return WAITING_FOR_PROJECT_SELECTION
+
+# Handle project selection
+async def handle_project_selection(update: Update, context):
+    user_choice = update.message.text.strip()
+
+    project_paths = {
+        '1': r"G:\Shared drives\ARC.HITENSE\ARC.LIM lima Residence\ARC.LIM.D Docs\ARC.LIM.D Tracked documents",
+        '2': r"G:\Shared drives\ARC.HITENSE\ARC.ORI Origins\ARC.ORI.D Docs\ARC.ORI.D Tracked documents",
+        # '3': 'Path for Setter project'  # Add the actual path if available
+    }
+
+    folder_path = project_paths.get(user_choice)
+
+    if folder_path:
+        user_id = update.message.from_user.id
+        user_name = update.message.from_user.full_name
+
+        # Check if the folder path exists
+        if not os.path.isdir(folder_path):
+            await update.message.reply_text("The selected project's folder path does not exist.")
+            return ConversationHandler.END
+
+        # Check if there are any valid files (PDF, Word, Excel) in the folder
+        valid_files_in_folder = [f for f in os.listdir(folder_path) if f.endswith((".pdf", ".docx", ".xlsx"))]
+        if not valid_files_in_folder:
+            await update.message.reply_text("No valid files (PDF, Word, or Excel) found in the selected project's folder.")
+            return ConversationHandler.END
+
+        # Set user-specific folder path and process the documents
+        context.user_data['folder_path'] = folder_path
+        context.user_data['valid_files_in_folder'] = valid_files_in_folder
+        load_and_index_documents(folder_path)  # This loads and indexes the documents
+        context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
+
+        # Evaluate token count
+        token_count = evaluate_context_token_count(folder_path, max_tokens)
+        percentage_full = (token_count / max_tokens) * 100
+        percentage_full = min(percentage_full, 100)  # Ensure it doesn't exceed 100%
+
+        await update.message.reply_text(
+            f"Project folder path set to: {folder_path}\n\nValid files have been indexed.\n\n"
+            f"Context storage is {percentage_full:.2f}% full."
+        )
+
+        # Save the user information in the database
+        add_user_to_db(user_id=user_id, user_name=user_name, folder=folder_path)
+    else:
+        await update.message.reply_text("Invalid selection or project is not available. Please select a valid project number (1 or 2).")
+        return ConversationHandler.END
+
+    return ConversationHandler.END
 
 # Status command handler
 async def status(update: Update, context):
@@ -78,7 +140,7 @@ async def status(update: Update, context):
         await update.message.reply_text(
             f"Status Information:\n\n"
             f"Name: {user_name}\n"
-            f"No folder path has been set yet. Please set it using the /path_folder command."
+            f"No folder path has been set yet. Please set it using the /folder command."
         )
     else:
         if valid_files_in_folder:
@@ -86,12 +148,15 @@ async def status(update: Update, context):
             folder_info = f"The folder path is currently set to: {folder_path}\n\nValid Files (PDF, Word, Excel):\n{file_list}"
 
             # Evaluate token count
-            token_status = evaluate_context_token_count(folder_path, max_tokens)
+            token_count = evaluate_context_token_count(folder_path, max_tokens)
+            percentage_full = (token_count / max_tokens) * 100
+            percentage_full = min(percentage_full, 100)  # Ensure it doesn't exceed 100%
 
             await update.message.reply_text(
                 f"Status Information:\n\n"
                 f"Name: {user_name}\n"
-                f"{folder_info}\n\nValue of Context folder: {token_status}"
+                f"{folder_info}\n\n"
+                f"Context storage is {percentage_full:.2f}% full."
             )
         else:
             folder_info = f"The folder path is currently set to: {folder_path}, but no valid files (PDF, Word, or Excel) were found."
@@ -101,13 +166,13 @@ async def status(update: Update, context):
                 f"{folder_info}"
             )
 
-# Path folder command handler
-async def path_folder(update: Update, context):
+# Folder command handler
+async def folder(update: Update, context):
     await update.message.reply_text("Please provide the folder path for your documents (PDF, Word, Excel):")
     return WAITING_FOR_FOLDER_PATH
 
 # Handle receiving the folder path
-async def set_path_folder(update: Update, context):
+async def set_folder(update: Update, context):
     folder_path = update.message.text
     user_id = update.message.from_user.id
     user_name = update.message.from_user.full_name
@@ -130,10 +195,13 @@ async def set_path_folder(update: Update, context):
     context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
 
     # Evaluate token count
-    token_status = evaluate_context_token_count(folder_path, max_tokens)
+    token_count = evaluate_context_token_count(folder_path, max_tokens)
+    percentage_full = (token_count / max_tokens) * 100
+    percentage_full = min(percentage_full, 100)  # Ensure it doesn't exceed 100%
 
     await update.message.reply_text(
-        f"Folder path successfully set to: {folder_path}\n\nValid files have been indexed.\n\nToken Status: {token_status}"
+        f"Folder path successfully set to: {folder_path}\n\nValid files have been indexed.\n\n"
+        f"Context storage is {percentage_full:.2f}% full."
     )
 
     # Save the user information in the database
@@ -141,11 +209,47 @@ async def set_path_folder(update: Update, context):
 
     return ConversationHandler.END
 
+# Knowledge base command handler
+async def knowledge_base(update: Update, context):
+    folder_path = r"G:\Shared drives\NUANU ARCHITECTS\LIB Library\LIB Standards and Regulations"
+    user_id = update.message.from_user.id
+    user_name = update.message.from_user.full_name
+
+    # Check if the folder path exists
+    if not os.path.isdir(folder_path):
+        await update.message.reply_text("The knowledge base folder path does not exist.")
+        return
+
+    # Check if there are any valid files (PDF, Word, Excel) in the folder
+    valid_files_in_folder = [f for f in os.listdir(folder_path) if f.endswith((".pdf", ".docx", ".xlsx"))]
+    if not valid_files_in_folder:
+        await update.message.reply_text("No valid files (PDF, Word, or Excel) found in the knowledge base folder.")
+        return
+
+    # Set user-specific folder path and process the documents
+    context.user_data['folder_path'] = folder_path
+    context.user_data['valid_files_in_folder'] = valid_files_in_folder
+    load_and_index_documents(folder_path)  # This loads and indexes the documents
+    context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
+
+    # Evaluate token count
+    token_count = evaluate_context_token_count(folder_path, max_tokens)
+    percentage_full = (token_count / max_tokens) * 100
+    percentage_full = min(percentage_full, 100)  # Ensure it doesn't exceed 100%
+
+    await update.message.reply_text(
+        f"Knowledge base folder path set to: {folder_path}\n\nValid files have been indexed.\n\n"
+        f"Context storage is {percentage_full:.2f}% full."
+    )
+
+    # Save the user information in the database
+    add_user_to_db(user_id=user_id, user_name=user_name, folder=folder_path)
+
 # Ask command handler
 async def ask(update: Update, context):
     if not context.user_data.get('vector_store_loaded', False):
         await update.message.reply_text(
-            "The folder path has not been set or documents are not indexed. Use /path_folder first.")
+            "The folder path has not been set or documents are not indexed. Use /folder or /knowledge_base first.")
         return ConversationHandler.END
 
     valid_files_in_folder = context.user_data.get('valid_files_in_folder', [])
@@ -163,7 +267,7 @@ async def ask_question(update: Update, context):
 
     if response == "Invalid folder path.":
         await update.message.reply_text(
-            "The vector store is not loaded correctly. Please reset the folder path using /path_folder.")
+            "The vector store is not loaded correctly. Please reset the folder path using /folder or /knowledge_base.")
     else:
         if source_files:
             reference_message = "\n".join([f"Document: {file}" for file in source_files])
@@ -178,7 +282,7 @@ async def ask_question(update: Update, context):
 async def handle_message(update: Update, context):
     if not context.user_data.get('vector_store_loaded', False):
         await update.message.reply_text(
-            "The folder path has not been set or documents are not indexed. Use /path_folder first.")
+            "The folder path has not been set or documents are not indexed. Use /folder or /knowledge_base first.")
         return
 
     valid_files_in_folder = context.user_data.get('valid_files_in_folder', [])
@@ -200,10 +304,10 @@ async def handle_message(update: Update, context):
 def main():
     application = ApplicationBuilder().token(telegram_token).build()
 
-    path_folder_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('path_folder', path_folder)],
+    folder_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('folder', folder)],
         states={
-            WAITING_FOR_FOLDER_PATH: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_path_folder)],
+            WAITING_FOR_FOLDER_PATH: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_folder)],
         },
         fallbacks=[]
     )
@@ -216,10 +320,20 @@ def main():
         fallbacks=[]
     )
 
+    project_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('projects', projects)],
+        states={
+            WAITING_FOR_PROJECT_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_project_selection)],
+        },
+        fallbacks=[]
+    )
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("status", status))  # Add the status handler
-    application.add_handler(path_folder_conv_handler)
+    application.add_handler(CommandHandler("knowledge_base", knowledge_base))  # Add the knowledge base handler
+    application.add_handler(folder_conv_handler)
     application.add_handler(ask_conv_handler)
+    application.add_handler(project_conv_handler)
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 

@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS  # Corrected import
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.chains import RetrievalQA
@@ -14,13 +14,11 @@ from tiktoken import encoding_for_model
 openai_api_key = os.getenv('OPENAI_API_KEY')
 
 # Initialize LLM
-llm = ChatOpenAI(openai_api_key=openai_api_key, model_name='gpt-4o')
+llm = ChatOpenAI(openai_api_key=openai_api_key, model_name='gpt-4')
 
 vector_store = None
 
 ######################################################################
-
-
 
 def load_excel_file(file_path):
     """Load content from an Excel file as text."""
@@ -34,8 +32,7 @@ def load_word_file(file_path):
     doc = Doc(file_path)
     return "\n".join([para.text for para in doc.paragraphs])
 
-# Updated function to load and process PDF, Word, and Excel files and create FAISS index
-# Updated function to load and process PDF, Word, and Excel files and create FAISS index
+# Function to load and process PDF, Word, and Excel files and create FAISS index
 def load_and_index_documents(folder_path):
     global vector_store
 
@@ -58,14 +55,14 @@ def load_and_index_documents(folder_path):
         # Handle Word files
         elif filename.endswith(".docx"):
             content = load_word_file(file_path)
-            doc = Document(page_content=content, metadata={"source": filename})  # Use Langchain's Document schema
+            doc = Document(page_content=content, metadata={"source": filename})  # Use LangChain's Document schema
             documents.append(doc)
             found_valid_file = True  # Mark that we found a valid file
 
         # Handle Excel files
         elif filename.endswith(".xlsx"):
             content = load_excel_file(file_path)
-            doc = Document(page_content=content, metadata={"source": filename})  # Use Langchain's Document schema
+            doc = Document(page_content=content, metadata={"source": filename})  # Use LangChain's Document schema
             documents.append(doc)
             found_valid_file = True  # Mark that we found a valid file
 
@@ -80,7 +77,7 @@ def load_and_index_documents(folder_path):
     # Create embeddings using OpenAI embeddings
     embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
 
-    # Use FAISS from Langchain to store the document embeddings
+    # Use FAISS from LangChain to store the document embeddings
     vector_store = FAISS.from_documents(split_docs, embeddings)
     return "Documents successfully indexed."
 
@@ -117,29 +114,26 @@ def evaluate_context_token_count(folder_path, token_limit):
         # Handle Word files
         elif filename.endswith(".docx"):
             content = load_word_file(file_path)
-            doc = Document(page_content=content, metadata={"source": filename})  # Use Langchain's Document schema
+            doc = Document(page_content=content, metadata={"source": filename})  # Use LangChain's Document schema
             documents.append(doc)
             found_valid_file = True  # Mark that we found a valid file
 
         # Handle Excel files
         elif filename.endswith(".xlsx"):
             content = load_excel_file(file_path)
-            doc = Document(page_content=content, metadata={"source": filename})  # Use Langchain's Document schema
+            doc = Document(page_content=content, metadata={"source": filename})  # Use LangChain's Document schema
             documents.append(doc)
             found_valid_file = True  # Mark that we found a valid file
 
     # If no valid files were found, return an appropriate message
     if not found_valid_file:
-        return "No valid files found in the folder."
+        return 0  # Return 0 tokens if no valid files are found
 
     # Count tokens in the documents
     total_tokens = count_tokens_in_documents(documents)
 
-    # If tokens exceed 10,000, return the warning message
-    if total_tokens > token_limit:
-        return "The context folder contains too many tokens. Kindly remove any unnecessary documents to proceed."
-    else:
-        return f"Total token count: {total_tokens}"
+    return total_tokens  # Return the numeric token count
+
 
 # Function to handle retrieving and generating response using RAG
 def retrieve_and_generate(prompt: str):
@@ -150,7 +144,7 @@ def retrieve_and_generate(prompt: str):
     # Set up retriever
     retriever = vector_store.as_retriever()
 
-    # Use Langchain's RetrievalQA Chain to get the response
+    # Use LangChain's RetrievalQA Chain to get the response
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,
         retriever=retriever,
@@ -159,8 +153,8 @@ def retrieve_and_generate(prompt: str):
     )
 
     try:
-        # Use .invoke() method instead of deprecated __call__()
-        result = qa_chain.invoke({"query": prompt})
+        # Use .invoke() method
+        result = qa_chain({"query": prompt})
 
         # Ensure 'source_documents' key is present and retrieve documents
         sources = result.get("source_documents", [])
