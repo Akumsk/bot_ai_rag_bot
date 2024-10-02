@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 from llm import load_and_index_documents, retrieve_and_generate, evaluate_context_token_count
 from db import add_user_to_db, get_last_folder
+from settings import project_paths
 
 # Load environment variables
 load_dotenv()
@@ -37,8 +38,15 @@ async def start(update: Update, context):
         context.user_data['valid_files_in_folder'] = valid_files_in_folder
 
         if valid_files_in_folder:
-            load_and_index_documents(last_folder)  # Load and index the files
-            context.user_data['vector_store_loaded'] = True
+            try:
+                load_and_index_documents(last_folder)  # Load and index the files
+                context.user_data['vector_store_loaded'] = True
+            except Exception as e:
+                logging.error(f"Error during load_and_index_documents: {e}")
+                await update.message.reply_text(
+                    "An error occurred while loading and indexing your documents. Please try again later."
+                )
+                return
 
             # Evaluate token count
             token_count = evaluate_context_token_count(last_folder, max_tokens)
@@ -75,19 +83,17 @@ async def start(update: Update, context):
         )
 
 # Projects command handler
+
+
+# Projects command handler
 async def projects(update: Update, context):
-    await update.message.reply_text("Please put the number to select the project: 1) Lima, 2) Origin, 3) Setter.")
+    projects_list = "\n".join([f"{key}" for key in project_paths])
+    await update.message.reply_text(f"Please select a project:\n{projects_list}")
     return WAITING_FOR_PROJECT_SELECTION
 
 # Handle project selection
 async def handle_project_selection(update: Update, context):
     user_choice = update.message.text.strip()
-
-    project_paths = {
-        '1': r"G:\Shared drives\ARC.HITENSE\ARC.LIM lima Residence\ARC.LIM.D Docs\ARC.LIM.D Tracked documents",
-        '2': r"G:\Shared drives\ARC.HITENSE\ARC.ORI Origins\ARC.ORI.D Docs\ARC.ORI.D Tracked documents",
-        # '3': 'Path for Setter project'  # Add the actual path if available
-    }
 
     folder_path = project_paths.get(user_choice)
 
@@ -109,8 +115,15 @@ async def handle_project_selection(update: Update, context):
         # Set user-specific folder path and process the documents
         context.user_data['folder_path'] = folder_path
         context.user_data['valid_files_in_folder'] = valid_files_in_folder
-        load_and_index_documents(folder_path)  # This loads and indexes the documents
-        context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
+        try:
+            load_and_index_documents(folder_path)  # This loads and indexes the documents
+            context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
+        except Exception as e:
+            logging.error(f"Error during load_and_index_documents: {e}")
+            await update.message.reply_text(
+                "An error occurred while loading and indexing the project documents. Please try again later."
+            )
+            return ConversationHandler.END
 
         # Evaluate token count
         token_count = evaluate_context_token_count(folder_path, max_tokens)
@@ -191,8 +204,15 @@ async def set_folder(update: Update, context):
     # Set user-specific folder path and process the documents
     context.user_data['folder_path'] = folder_path
     context.user_data['valid_files_in_folder'] = valid_files_in_folder
-    load_and_index_documents(folder_path)  # This loads and indexes the documents
-    context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
+    try:
+        load_and_index_documents(folder_path)  # This loads and indexes the documents
+        context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
+    except Exception as e:
+        logging.error(f"Error during load_and_index_documents: {e}")
+        await update.message.reply_text(
+            "An error occurred while loading and indexing your documents. Please try again later."
+        )
+        return ConversationHandler.END
 
     # Evaluate token count
     token_count = evaluate_context_token_count(folder_path, max_tokens)
@@ -229,8 +249,15 @@ async def knowledge_base(update: Update, context):
     # Set user-specific folder path and process the documents
     context.user_data['folder_path'] = folder_path
     context.user_data['valid_files_in_folder'] = valid_files_in_folder
-    load_and_index_documents(folder_path)  # This loads and indexes the documents
-    context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
+    try:
+        load_and_index_documents(folder_path)  # This loads and indexes the documents
+        context.user_data['vector_store_loaded'] = True  # Mark that the vector store is successfully loaded
+    except Exception as e:
+        logging.error(f"Error during load_and_index_documents: {e}")
+        await update.message.reply_text(
+            "An error occurred while loading and indexing the knowledge base documents. Please try again later."
+        )
+        return
 
     # Evaluate token count
     token_count = evaluate_context_token_count(folder_path, max_tokens)
@@ -263,7 +290,14 @@ async def ask(update: Update, context):
 # Handle receiving the user's question and provide document reference
 async def ask_question(update: Update, context):
     user_prompt = update.message.text
-    response, source_files = retrieve_and_generate(user_prompt)
+    try:
+        response, source_files = retrieve_and_generate(user_prompt)
+    except Exception as e:
+        logging.error(f"Error during retrieve_and_generate: {e}")
+        await update.message.reply_text(
+            "An error occurred while processing your question. Please try again later."
+        )
+        return ConversationHandler.END
 
     if response == "Invalid folder path.":
         await update.message.reply_text(
@@ -291,7 +325,14 @@ async def handle_message(update: Update, context):
         return
 
     user_message = update.message.text
-    response, source_files = retrieve_and_generate(user_message)
+    try:
+        response, source_files = retrieve_and_generate(user_message)
+    except Exception as e:
+        logging.error(f"Error during retrieve_and_generate: {e}")
+        await update.message.reply_text(
+            "An error occurred while processing your message. Please try again later."
+        )
+        return
 
     if source_files:
         reference_message = "\n".join([f"Document: {file}" for file in source_files])
@@ -299,6 +340,14 @@ async def handle_message(update: Update, context):
         reference_message = "No document references found."
 
     await update.message.reply_text(f"{response}\n\nReferences:\n{reference_message}")
+
+# Error handler
+async def error_handler(update: object, context: object) -> None:
+    logging.error(msg="Exception while handling an update:", exc_info=context.error)
+    if update and update.effective_message:
+        await update.effective_message.reply_text(
+            "An unexpected error occurred. Please try again later."
+        )
 
 # Main function to set up the bot
 def main():
@@ -336,6 +385,9 @@ def main():
     application.add_handler(project_conv_handler)
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Add the error handler
+    application.add_error_handler(error_handler)
 
     application.run_polling()
 

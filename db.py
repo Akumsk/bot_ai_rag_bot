@@ -34,7 +34,7 @@ def add_user_to_db(user_id, user_name, folder):
 
         # SQL query to insert user data into the database
         query = """
-            INSERT INTO users (user_id, user_name, folder, date_time)
+            INSERT INTO folders (user_id, user_name, folder, date_time)
             VALUES (%s, %s, %s, %s)
         """
         # Execute the query with provided data
@@ -54,13 +54,13 @@ def get_last_folder(user_id):
     try:
         # SQL query to get the last folder saved for a user by user_id
         query = """
-            SELECT folder FROM users
-            WHERE user_id = %s::text  -- Convert user_id to text if needed
+            SELECT folder FROM folders
+            WHERE user_id = %s
             ORDER BY date_time DESC
             LIMIT 1
         """
-        # Execute the query, convert user_id to string if necessary
-        cursor.execute(query, (str(user_id),))
+        # Execute the query, pass user_id as integer
+        cursor.execute(query, (user_id,))
         result = cursor.fetchone()
 
         if result:
