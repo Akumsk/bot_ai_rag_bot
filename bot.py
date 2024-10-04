@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 from telegram.ext import ConversationHandler
 import logging
@@ -19,6 +19,19 @@ WAITING_FOR_FOLDER_PATH, WAITING_FOR_QUESTION, WAITING_FOR_PROJECT_SELECTION = r
 
 max_tokens = 100000
 
+# Define commands for the menu
+async def post_init(application):
+    """Post initialization hook for the bot."""
+    commands = [
+        BotCommand("start", "Display introduction message"),
+        BotCommand("folder", "Set folder path for documents"),
+        BotCommand("projects", "Select a project from predefined options"),
+        BotCommand("ask", "Ask a question about documents"),
+        BotCommand("status", "Display current status and information"),
+        BotCommand("knowledge_base", "Set context to knowledge base")
+    ]
+    await application.bot.set_my_commands(commands)
+
 # Start command handler
 async def start(update: Update, context):
     user_id = update.message.from_user.id
@@ -33,42 +46,57 @@ async def start(update: Update, context):
     last_folder = get_last_folder(user_id)
 
     if last_folder:
-        context.user_data['folder_path'] = last_folder  # Set the retrieved folder as the current folder
-        valid_files_in_folder = [f for f in os.listdir(last_folder) if f.endswith((".pdf", ".docx", ".xlsx"))]
-        context.user_data['valid_files_in_folder'] = valid_files_in_folder
-
-        if valid_files_in_folder:
+        # Check if folder exists and is accessible
+        if os.path.isdir(last_folder):
+            context.user_data['folder_path'] = last_folder  # Set the retrieved folder as the current folder
             try:
-                load_and_index_documents(last_folder)  # Load and index the files
-                context.user_data['vector_store_loaded'] = True
+                valid_files_in_folder = [f for f in os.listdir(last_folder) if f.endswith((".pdf", ".docx", ".xlsx"))]
+                context.user_data['valid_files_in_folder'] = valid_files_in_folder
+
+                if valid_files_in_folder:
+                    try:
+                        load_and_index_documents(last_folder)  # Load and index the files
+                        context.user_data['vector_store_loaded'] = True
+                    except Exception as e:
+                        logging.error(f"Error during load_and_index_documents: {e}")
+                        await update.message.reply_text(
+                            "An error occurred while loading and indexing your documents. Please try again later."
+                        )
+                        return
+
+                    # Evaluate token count
+                    token_count = evaluate_context_token_count(last_folder, max_tokens)
+                    percentage_full = (token_count / max_tokens) * 100
+                    percentage_full = min(percentage_full, 100)  # Ensure it doesn't exceed 100%
+
+                    await update.message.reply_text(
+                        f"Welcome back, {user_name}! I have loaded your previous folder for context:\n\n {last_folder}\n\n"
+                        f"Context storage is {percentage_full:.2f}% full.\n\n"
+                        f"You can specify any folder by command /folder \n"
+                        f"Or select the /projects from predefined options\n"
+                        "/start - Display this introduction message.\n"
+                        "/ask - Ask a question about the content of the documents.\n"
+                        "/status - Display current user and folder path information, along with a list of valid files in the folder.\n"
+                        "/knowledge_base - Set the context folder to the knowledge base.\n"
+                        "/projects - Select a project folder from predefined options.\n"
+                        "Additionally, you can send any message without a command, and it will be treated as a question."
+                    )
+                else:
+                    await update.message.reply_text(
+                        f"Welcome back, {user_name}! However, no valid files (PDF, Word, or Excel) were found in your last folder: {last_folder}."
+                    )
             except Exception as e:
-                logging.error(f"Error during load_and_index_documents: {e}")
+                logging.error(f"Error accessing folder {last_folder}: {e}")
                 await update.message.reply_text(
-                    "An error occurred while loading and indexing your documents. Please try again later."
+                    "An error occurred while accessing your last folder. Please select a new context folder."
                 )
-                return
-
-            # Evaluate token count
-            token_count = evaluate_context_token_count(last_folder, max_tokens)
-            percentage_full = (token_count / max_tokens) * 100
-            percentage_full = min(percentage_full, 100)  # Ensure it doesn't exceed 100%
-
-            await update.message.reply_text(
-                f"Welcome back, {user_name}! I have loaded your previous folder for context:\n\n {last_folder}\n\n"
-                f"Context storage is {percentage_full:.2f}% full.\n\n"
-                f"You can specify any folder by command /folder \n"
-                f"Or select the /projects from predefined options\n"
-                "/start - Display this introduction message.\n"
-                "/ask - Ask a question about the content of the documents.\n"
-                "/status - Display current user and folder path information, along with a list of valid files in the folder.\n"
-                "/knowledge_base - Set the context folder to the knowledge base.\n"
-                "/projects - Select a project folder from predefined options.\n"
-                "Additionally, you can send any message without a command, and it will be treated as a question."
-            )
+                return WAITING_FOR_FOLDER_PATH
         else:
+            # Folder doesn't exist or is not accessible
             await update.message.reply_text(
-                f"Welcome back, {user_name}! However, no valid files (PDF, Word, or Excel) were found in your last folder: {last_folder}."
+                "Your previous folder doesn't exist or you do not have access. Please provide the folder path for your documents (PDF, Word, Excel):"
             )
+            return WAITING_FOR_FOLDER_PATH
     else:
         await update.message.reply_text(
             "Welcome to the AI document assistant bot! This bot generates text-based responses using documents "
@@ -81,9 +109,6 @@ async def start(update: Update, context):
             "/knowledge_base - Set the context folder to the knowledge base.\n"
             "Additionally, you can send any message without a command, and it will be treated as a question."
         )
-
-# Projects command handler
-
 
 # Projects command handler
 async def projects(update: Update, context):
@@ -351,10 +376,14 @@ async def error_handler(update: object, context: object) -> None:
 
 # Main function to set up the bot
 def main():
-    application = ApplicationBuilder().token(telegram_token).build()
+    # Build application with the post_init hook
+    application = ApplicationBuilder()\
+        .token(telegram_token)\
+        .post_init(post_init)\
+        .build()
 
     folder_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('folder', folder)],
+        entry_points=[CommandHandler('folder', folder), CommandHandler('start', start)],
         states={
             WAITING_FOR_FOLDER_PATH: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_folder)],
         },
@@ -377,20 +406,17 @@ def main():
         fallbacks=[]
     )
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("status", status))  # Add the status handler
-    application.add_handler(CommandHandler("knowledge_base", knowledge_base))  # Add the knowledge base handler
+    application.add_handler(CommandHandler("status", status))
+    application.add_handler(CommandHandler("knowledge_base", knowledge_base))
     application.add_handler(folder_conv_handler)
     application.add_handler(ask_conv_handler)
     application.add_handler(project_conv_handler)
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Add the error handler
     application.add_error_handler(error_handler)
 
     application.run_polling()
-
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

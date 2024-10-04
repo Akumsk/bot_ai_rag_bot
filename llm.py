@@ -10,11 +10,13 @@ from docx import Document as Doc  # For Word documents
 from io import StringIO
 from tiktoken import encoding_for_model
 
+from settings import model_name
+
 # Set up OpenAI API key
 openai_api_key = os.getenv('OPENAI_API_KEY')
 
 # Initialize LLM
-llm = ChatOpenAI(openai_api_key=openai_api_key, model_name='gpt-4')
+llm = ChatOpenAI(openai_api_key=openai_api_key, model_name=model_name)
 
 vector_store = None
 
