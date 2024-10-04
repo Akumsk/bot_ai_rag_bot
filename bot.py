@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv
 from llm import load_and_index_documents, retrieve_and_generate, evaluate_context_token_count
 from db import add_user_to_db, get_last_folder
-from settings import project_paths
+from settings import project_paths, max_tokens
 
 # Load environment variables
 load_dotenv()
@@ -16,8 +16,6 @@ telegram_token = os.getenv('TELEGRAM_TOKEN')
 
 # States for ConversationHandler
 WAITING_FOR_FOLDER_PATH, WAITING_FOR_QUESTION, WAITING_FOR_PROJECT_SELECTION = range(3)
-
-max_tokens = 100000
 
 # Define commands for the menu
 async def post_init(application):
